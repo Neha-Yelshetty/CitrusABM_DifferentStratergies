@@ -28,7 +28,7 @@ void Phase4(int farmid);
 /********************************************************************
 * GLOBALS
 *********************************************************************/
-Grove* agents;
+//Grove* agents;
 //Behavior* behaviorPatterns[3];
 string harvestDays;
 string yieldFilename;
@@ -41,8 +41,10 @@ string strategyParameters;
 string strategyFlags; 
 string agencyFlags;
 int experimentID;
-BiologicalModel bioModels[ParameterSet::gridLength*ParameterSet::gridWidth];
+//BiologicalModel bioModels[ParameterSet::gridLength*ParameterSet::gridWidth];
 
+vector<Grove> agents(ParameterSet::gridLength*ParameterSet::gridWidth);
+vector<BiologicalModel> bioModels(ParameterSet::gridLength*ParameterSet::gridWidth);
 
 boost::random::mt19937 econ_rng(std::time(0));
 boost::random::uniform_01<> econ_gen;
@@ -92,7 +94,7 @@ vector<string> split(string s, string delimiter) {
 * 2: Rogue radius
 * *************************************************************/
 void InitialiseCHMA(Commodity crop) {
-    agents = new Grove[ParameterSet::gridLength*ParameterSet::gridWidth];
+    //agents = new Grove[ParameterSet::gridLength*ParameterSet::gridWidth];
     vector<string> sParams = split(strategyParameters, ";");
     vector<string> sFlags = split(strategyFlags, ";");
     vector<string> agencyParams = split(agencyFlags, ";");
@@ -120,16 +122,17 @@ void InitialiseCHMA(Commodity crop) {
         vector<string> sFlags_agent = split(sFlags[k], ",");
         vector<string> sParams_agent = split(sParams[k], ",");
         k = k+1;
-        agents[i].setBiologicalModel(&bioModels[i]);
-        agents[i].getBiologicalModel()->initalize();
+        //agents[i].setBiologicalModel(&bioModels[i]);
+        //agents[i].getBiologicalModel()->initialize(&agents[i]);
         //Rogue trees
         if (stoi(sFlags_agent[0]) == 1) {
-            agents[i].behaviorPatterns.push_back(new RogueTrees(stod(sParams_agent[0]),
-                                                                stod(sParams_agent[1]),
-                                                                stod(sParams_agent[2]),
-                                                                stod(sParams_agent[3]),
-                                                                stod(sParams_agent[4]))
-                                                );
+           Behavior* rogueTrees = new RogueTrees(stod(sParams_agent[0]),
+                                              stod(sParams_agent[1]),
+                                              stod(sParams_agent[2]),
+                                              stod(sParams_agent[3]),
+                                              stod(sParams_agent[4]));
+        rogueTrees->setBiologicalModel(&bioModels[i]);  // Link BiologicalModel
+        agents[i].behaviorPatterns.push_back(rogueTrees);
         }
 
              
@@ -140,6 +143,8 @@ void InitialiseCHMA(Commodity crop) {
                                              bioABM::getSpringStart(),
                                              bioABM::getSummerStart(),
                                              bioABM::getFallStart());
+
+            spray->setBiologicalModel(&bioModels[i]);                                  
             agents[i].behaviorPatterns.push_back(spray);
         }
                     
@@ -150,6 +155,7 @@ void InitialiseCHMA(Commodity crop) {
                 stod(sParams_agent[7]),
                 stod(sParams_agent[8])
             );
+            dPlant->setBiologicalModel(&bioModels[i]); 
             agents[i].behaviorPatterns.push_back(dPlant);
         }
 
@@ -162,6 +168,7 @@ void InitialiseCHMA(Commodity crop) {
                 stoi(sParams_agent[13]),
                 stod(sParams_agent[14])
             );
+            wideRogue->setBiologicalModel(&bioModels[i]); 
              agents[i].behaviorPatterns.push_back(wideRogue);
         }
         
@@ -188,7 +195,7 @@ void InitialiseCHMA(Commodity crop) {
 void Phase1(int farmid) {
     //bioABM::advanceBiologicalModel();
     //bioModels[farmid].biologicalmodel(); 
-    agents[farmid].getBiologicalModel()->biologicalmodel(farmid);
+    agents[farmid].getBiologicalModel()->biologicalmodel(farmid,&agents[farmid]);
 }
 
 /*************************************************************
@@ -327,9 +334,9 @@ double getMeanHLB(Grove g,int farmid) {
     double totalHLB = 0.0;
     for (int i = ibounds[0]; i < ibounds[1]; i++) {
         for (int j = jbounds[0]; j < jbounds[1]; j++) {
-            if (agents[farmid].getBiologicalModel()->bioisTreeAlive(i,j)) {
+            if (agents[farmid].getBiologicalModel()->bioisTreeAlive(i,j,&agents[farmid])) {
                 totalCells += 1.0;
-                totalHLB += agents[farmid].getBiologicalModel()->biohlbseverity(i, j);
+                totalHLB += agents[farmid].getBiologicalModel()->biohlbseverity(i, j,&agents[farmid]);
                
             }
         }
@@ -342,13 +349,13 @@ double getMeanHLB(Grove g,int farmid) {
     
 }
 
-int getDeadTrees(Grove g) {
-    int* ibounds = g.getIBounds();
-    int* jbounds = g.getJBounds();
+int getDeadTrees(Grove* g) {
+    int* ibounds = g->getIBounds();
+    int* jbounds = g->getJBounds();
     int deadTrees = 0;
     for (int i = ibounds[0]; i < ibounds[1]; i++) {
         for (int j = jbounds[0]; j < jbounds[1]; j++) {
-            if (!bioABM::isTreeAlive(i,j)) {
+            if (!bioABM::isTreeAliveAtgrove(i,j,g)) {
                 deadTrees++;
             }
         }
@@ -475,11 +482,11 @@ void Phase5(int farmid) {
             for (int k = ibounds[0]; k < ibounds[1]; k++) {
                 for (int l = jbounds[0]; l < jbounds[1]; l++) {
                     //No yield if tree is dead
-                    if (!agents[farmid].getBiologicalModel()->bioisTreeAlive(k,l)) {
+                    if (!agents[farmid].getBiologicalModel()->bioisTreeAlive(k,l,&agents[farmid])) {
                         continue;
                     }
                     //Projected severity based on days since initial infection
-                    double severity = agents[farmid].getBiologicalModel()->biohlbseverity(k, l);// bioModels[farmid].biohlbseverity(k,l);
+                    double severity = agents[farmid].getBiologicalModel()->biohlbseverity(k, l,&agents[farmid]);// bioModels[farmid].biohlbseverity(k,l);
                     //Yield of crop at projected age
                     double returns = agents[farmid].getCrop()->getReturns();
                     //Infected yield: Units yielded times projected decay
@@ -593,8 +600,9 @@ void writeCSVLine(int farmid) {
 void runModel() {
     while (bioABM::getModelDay() <= bioABM::getModelDuration()) {
         for (int farmid = 0; farmid < ParameterSet::gridLength * ParameterSet::gridWidth; farmid++) {
-           
+              
                 Phase1(farmid);
+                 
             //cout << "Period " << bioABM::getModelDay() << endl;
             if (!ParameterSet::biologicalRun) {
                 if (bioABM::getModelDay() % ParameterSet::planningLength == 0) {
@@ -602,16 +610,18 @@ void runModel() {
                 }
                 // Stage 2: Execution of Planned Actions
                 Phase2(farmid);
+               
 
                 // Stage 3: Behavior determination
                 //Phase3();
 
                 //Stage 4: Planning
                 Phase4(farmid);
-
+                
                 //Stage 5: Accounting
                 Phase5(farmid);
                 writeCSVLine(farmid);
+                
             }
         }
     }

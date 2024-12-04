@@ -7,6 +7,10 @@
 #include "biologicalmodel.hpp"
 using namespace std;
 
+namespace bioABM {
+    struct FlushPatch;  // Forward declaration
+}
+
 class Behavior;
 class BiologicalModel;
 
@@ -20,8 +24,9 @@ private:
     double alpha; // Expectation of neighbors coordination
     double sprayEfficacy;
     BiologicalModel* bioModel;
-
+    
 public:
+    
     double fixedCosts; //Fixed cost per year associated with the grove
     double costs = 0;
     double returns = 0;
@@ -42,10 +47,11 @@ public:
     int rogueRadius = 0;
     vector<Behavior*> behaviorPatterns;
     int farmid =0;
+    std::vector<std::vector<bioABM::FlushPatch>> lattice;
+
     Grove();
-    Grove(Commodity crop, bool agency, int i_lb, int i_ub, int j_lb, int j_ub,int farmid);
-    //Grove();
-    // Getters 
+    Grove(Commodity crop, bool agency, int i_lb, int i_ub, int j_lb, int j_ub, int farmid) ;
+
     bool hasAgency() { return this->agency; }
     Commodity* getCrop() { return &crop; }
     double getFixedCosts() { return this->fixedCosts; }
@@ -58,6 +64,8 @@ public:
     double getLambda() { return this->lambda; }
     double getAlpha() { return this->alpha; }
     double getSprayEfficacy() { return this->sprayEfficacy; }
+    void initializeLattice(int numRows, int rowLength);
+
     void setBiologicalModel(BiologicalModel* model) {
         bioModel = model;
     }

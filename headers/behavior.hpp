@@ -4,14 +4,17 @@
 #include "math.h"
 #include "planningFunc.hpp"
 #include "bioABM.h"
+#include "biologicalmodel.hpp"
 #include<vector>
 
-
+class BiologicalModel;
 using namespace std;
 
 void sprayGrove(Grove * g);
 double getInfectedYield(double severity);
 class Behavior {
+private:
+    BiologicalModel* bioModel;
 public:
     //Fill up the planned actions vector for the next season
     virtual void PlanActions() = 0;
@@ -42,6 +45,14 @@ public:
 
     //Action queue
     bool q[365] = { 0 };
+
+    void setBiologicalModel(BiologicalModel* model) {
+        bioModel = model;
+    }
+
+    BiologicalModel* getBiologicalModel() {
+        return bioModel;
+    }
 
 };
 

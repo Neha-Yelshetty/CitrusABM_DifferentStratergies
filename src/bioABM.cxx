@@ -1,4 +1,6 @@
 #include "../headers/bioABM.h"
+#include "../headers/grove.hpp"
+#include <vector>
 using namespace std;
 namespace bioABM {
 
@@ -61,8 +63,9 @@ double borderCrossingP = 0.01;
 bool outputFlag = false;
 float initialInfectedPortion = 0.18;
 int initialNumPsyllids = 300;
-int hlbseverityon = false;
 
+int globalfarmid = 0;
+Grove* globalgrove;
 // Lattice dimensions
 // paper size: 69(nR) x 157 (rL)
 const int rowLength = 69;
@@ -70,7 +73,17 @@ const int numRows = 157;
 const int hBorders = 0;
 const int vBorders = 0;
 
-
+// double rand glbal variable
+double doubleranddiscreteProbability = 0;
+double doubleRandbirthnewflush[numRows][rowLength][20];
+std::vector<std::vector<double>> doubleRanduniformPsyllidinfect;
+std::vector<std::vector<double>> doubleRanduniformPsyllidfemale;
+std::vector<std::vector<double>> doubleRandinvasionModality1infect;
+std::vector<std::vector<double>> doubleRandinvasionModality1femal;
+std::vector<std::vector<double>> doubleRandinvasionModality3infect;
+std::vector<std::vector<double>> doubleRandinvasionModality3femal;
+std::vector<std::vector<double>> doubleRandinvasionModality5infect;
+std::vector<std::vector<double>> doubleRandinvasionModality5femal;
 #pragma endregion
 
 /**********************************************************************************************
@@ -107,171 +120,20 @@ vector<coord> migrationDiffs  = {coord(1,0), coord(0,1), coord(-1,0), coord(0,-1
  * *********************************************************************************************/
 #pragma region
 
-/********************************
- * FLUSH SHOOT
- * A single flush shoot, is part
- * of a greater flush patch
- * ******************************/
-struct FlushShoot {
-    int age = 0;
-    bool infected = false;
-    bool symptomatic = false;
-    int numEggs = 0;
-    int daysAsymptomatic = 0;
-    bool alive = true;
-    bool bark = false;
-    int numPsyllids = 0;
-    int numInfectedPsyllids = 0;
-};
 
-/*******************************
- * FLUSH PATCH
- * The core grid unit, holds flush
- * shoots. The term flush patch
- * is used interchangebly with
- * tree in our discussions/paper
- * *****************************/
-struct FlushPatch {
-    int age = 0;
-    bool alive = true;
-    int oldInfectedShoots = 0;
-    int oldUninfectedShoots = 0;
-    int numPsyllids_male = 0;
-    int numPsyllids_female = 0;
-    int numInfectedPsyllids_male = 0;
-    int numInfectedPsyllids_female = 0;
-    bool symptomatic = false;
-    int daysInfected = 0;
-    bool infectious = false;
-    array<int,17> numNymphs;
-    array<int,17> numInfectedNymphs;
-    array<int, 30> numShoots;
-    array<int, 30> numInfectedShoots;
 
-    //Constructor
-    FlushPatch() {      
-        for (int i = 0; i < 17; i++) {
-            numNymphs[i] = 0;
-            numInfectedNymphs[i] = 0;
-        }
-        for (int i = 0; i < 30; i++) {
-            numShoots[i] = 0;
-            numInfectedShoots[i] = 0;
-        }
-    }
 
-    //Used on tree death
-    void kill() {
-        oldInfectedShoots = 0;
-        oldUninfectedShoots = 0;
-        numShoots.fill(0);
-        numInfectedShoots.fill(0);
-        clearPsyllids();
-        alive = false;
-        symptomatic = false;
-    }
-
-    //Debugging helper
-    bool validate() {
-        for (int i = 0; i < 17; i++) {
-            if (numNymphs[i] < 0 || numInfectedNymphs[i] < 0) {
-                return false;
-            }
-        }
-        for (int i = 0; i < 30; i++) {
-            if (numShoots[i] < 0 || numInfectedShoots[i] < 0) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    //Age getter
-    int getAge() {
-        return age;
-    }
-
-    //Psyllid getter
-    int getNumPsyllids() {
-        int numPsyllids = 0;
-        numPsyllids += numPsyllids_male;
-        numPsyllids += numPsyllids_female;
-        numPsyllids += numInfectedPsyllids_male;
-        numPsyllids += numInfectedPsyllids_female;
-        //numPsyllids += accumulate(numNymphs.begin(), numNymphs.end(), 0);
-        //numPsyllids += accumulate(numInfectedNymphs.begin(), numInfectedNymphs.end(), 0);
-        return numPsyllids;
-    }
-
-    //Calculate HLB severity, which is measured as the proportion of infected flushes
-    double getHLBSeverity() {
-        
-        int uninfected = accumulate(numShoots.begin(), numShoots.end(), 0);
-        int infected = accumulate(numInfectedShoots.begin(), numInfectedShoots.end(), 0);
-        double hlbNum = (double)infected + (double)oldInfectedShoots;
-        double hlbDenom = (double)uninfected + (double)oldUninfectedShoots + (double)hlbNum;
-       
-      
-            if (hlbDenom == 0 || hlbseverityon) {
-            
-                return 0;
-            }
-            else {
-                assert((hlbNum / hlbDenom) >= 0 && (hlbNum / hlbDenom) <= 1);
-                double severity = hlbNum / hlbDenom;
-                return severity;
-            }
-        
-
-    }
-
-    //Remove all psyllids
-    void clearPsyllids() {
-        numPsyllids_female = 0;
-        numPsyllids_male = 0;
-        numInfectedPsyllids_female = 0;
-        numInfectedPsyllids_male = 0;
-        numNymphs.fill(0);
-        numInfectedNymphs.fill(0);
-        return;
-    }
-
-    //Wrapper used somewhere, unsure why this is here
-    int getTotalPsyllids() {
-        return getNumPsyllids();
-    }
-
-    //Helper to add a psyllid based on its characteristics
-    void placePsyllid(bool female, bool adult, bool infected, int age = -1) {
-        if (adult && female && infected) {
-            numInfectedPsyllids_female++;
-        }
-        else if (adult && female && !infected) {
-            numPsyllids_female++;
-        }
-        else if (adult && !female && infected) {
-            numInfectedPsyllids_male++;
-        }
-        else if (adult && !female && !infected) {
-            numPsyllids_male++;
-        }
-        else if (!adult && !infected) {
-            numNymphs[age]++;
-        }
-        else if (!adult && infected) {
-            numInfectedNymphs[age]++;
-        }
-    }
-};
 
 //Used in determining the number of neighbors a cell has
 enum PositionType {MIDDLE, EDGE, CORNER};
 
 typedef boost::tuple<int, int> coord;
-typedef array<FlushPatch, rowLength> FlushRow;
+//typedef array<FlushPatch, rowLength> FlushRow;
 //11x25 lattice that represents flush patches
-array<FlushRow, numRows> lattice; 
-
+//array<FlushRow, numRows> lattice; 
+//typedef std::vector<FlushPatch> FlushRow;  
+//std::vector<FlushRow> lattice;
+//std::vector<std::vector<FlushPatch>> lattice;
 #pragma endregion
 
 /***********************************************************************************************
@@ -337,7 +199,9 @@ double doubleRand(double min, double max) {
  * ***********************************************************/
 int discreteProbabilityMatch(vector<double> probabilities) {
     double pull;
-    pull = doubleRand(0, 1);
+    if(globalfarmid == 0)
+        doubleranddiscreteProbability = doubleRand(0, 1);
+    pull = doubleranddiscreteProbability;
     double cumSum = 0;
     int resultIdx = -1;
     for (int i = 0; i < probabilities.size(); i++) {
@@ -408,12 +272,21 @@ int getSummerStart() {
 * Returns flush patch age at coordinates
 *************************************************************/
 int getAgeAt(int i, int j, int differential) {
-    return (lattice[i][j].getAge() + differential) / 365;
+    return (globalgrove->lattice[i][j].getAge() + differential) / 365;
 }
 
-bool isTreeAlive(int i, int j) {
+/*bool isTreeAlive(int i, int j) {
     if (isValidCoordinate(coord(i,j))) {
         return lattice[i][j].alive;
+    }
+    else {
+        return false;
+    }
+}*/
+
+bool isTreeAliveAtgrove(int i, int j,Grove* agent) {
+    if (isValidCoordinateAtgrove(coord(i,j),agent)) {
+        return agent->lattice[i][j].alive;
     }
     else {
         return false;
@@ -425,15 +298,19 @@ bool isTreeAlive(int i, int j) {
  * Returns true if flush patch at 
  * coordinates is symptomatic
  * *************************************/
-bool isSymptomatic(int i,int j) {
-    return lattice[i][j].symptomatic;
+bool isSymptomatic(int i,int j,Grove* agent) {
+    return agent->lattice[i][j].symptomatic;
 }
 /************************************************************
 * Get Severity At
 * Returns flush patch severity at coordinates
 *************************************************************/
-double getSeverityAt(int i, int j) {
+/*double getSeverityAt(int i, int j) {
     return lattice[i][j].getHLBSeverity();
+}*/
+
+double getSeverityAtgrove(int i, int j,Grove* agent) {
+    return agent->lattice[i][j].getHLBSeverity();
 }
 
 /**************************************************************
@@ -445,7 +322,7 @@ double getPsyllidsAt(int i, int j) {
         return 0;
     }
     else {
-        return lattice[i][j].getTotalPsyllids();
+        return globalgrove->lattice[i][j].getTotalPsyllids();
     }
 }
 
@@ -474,19 +351,19 @@ int getModelDuration() {
 void write_csv_batch() {
     for (int i = 0; i < numRows; i++) {
         for (int j = 0; j < rowLength; j++) {
-            int numPsyllids = lattice[i][j].numPsyllids_male + 
-                lattice[i][j].numPsyllids_female + 
-                accumulate(lattice[i][j].numNymphs.begin(), lattice[i][j].numNymphs.end(), 0);
-            int numInfectedPsyllids = lattice[i][j].numInfectedPsyllids_male 
-                + lattice[i][j].numInfectedPsyllids_female +
-                accumulate(lattice[i][j].numInfectedNymphs.begin(), lattice[i][j].numInfectedNymphs.end(), 0);
-            double severity = lattice[i][j].getHLBSeverity();
+            int numPsyllids = globalgrove->lattice[i][j].numPsyllids_male + 
+                globalgrove->lattice[i][j].numPsyllids_female + 
+                accumulate(globalgrove->lattice[i][j].numNymphs.begin(), globalgrove->lattice[i][j].numNymphs.end(), 0);
+            int numInfectedPsyllids = globalgrove->lattice[i][j].numInfectedPsyllids_male 
+                + globalgrove->lattice[i][j].numInfectedPsyllids_female +
+                accumulate(globalgrove->lattice[i][j].numInfectedNymphs.begin(), globalgrove->lattice[i][j].numInfectedNymphs.end(), 0);
+            double severity = globalgrove->lattice[i][j].getHLBSeverity();
             if (severity > 1) {
                 cout << "WARNING: HLB ERROR AT (" << i << ", " << j << ")\n";
             }
             csvFile << modelDay << "," << i << "," << j << "," << numPsyllids << "," 
                 << numInfectedPsyllids << "," << std::fixed 
-                << setprecision(5) << severity << "," << experimentID <<  "," << lattice[i][j].alive << "," << lattice[i][j].symptomatic << "\n";
+                << setprecision(5) << severity << "," << experimentID <<  "," << globalgrove->lattice[i][j].alive << "," << globalgrove->lattice[i][j].symptomatic << "\n";
         }
     }
 }
@@ -499,7 +376,7 @@ int countPsyllids() {
     int num = 0;
     for (int i = 0; i < numRows; i++) {
         for (int j = 0; j < rowLength; j++) {
-            int cnt = lattice[i][j].getTotalPsyllids();
+            int cnt = globalgrove->lattice[i][j].getTotalPsyllids();
             if (cnt > 0) {
                 cout << "Found " << cnt << " at " << i << "," << j <<  " on day " << modelDay << endl;
                 num += cnt;
@@ -517,7 +394,7 @@ int countPsyllids() {
 bool validateLattice() {
     for (int i = 0; i < numRows; i++) {
         for (int j = 0; j < rowLength; j++) {
-            if (!lattice[i][j].validate()) {
+            if (!globalgrove->lattice[i][j].validate()) {
                 cout << "Failed validation at (" << i << ", " << j << ")\n";
                 return false;
             }
@@ -607,7 +484,23 @@ bool isValidCoordinate(coord pos) {
     int row = pos.get<0>();
     int col = pos.get<1>();
     if (row >= 0 && row < numRows && col >= 0 && col < rowLength) {
-        if (lattice[row][col].alive) {
+        if (globalgrove->lattice[row][col].alive) {
+            return true;
+        }
+        else {
+            return false;
+        }
+    }
+    else {
+        return false;
+    }
+}
+
+bool isValidCoordinateAtgrove(coord pos,Grove* agent) {
+    int row = pos.get<0>();
+    int col = pos.get<1>();
+    if (row >= 0 && row < numRows && col >= 0 && col < rowLength) {
+        if (agent->lattice[row][col].alive) {
             return true;
         }
         else {
@@ -652,14 +545,22 @@ PositionType determinePositionType(coord pos) {
 /*************************************************
  * Initialize Lattice
  * ***********************************************/
-void initializeLattice() {
+void initializeLattice(Grove* agents) {
+    int agentIndex = 0;
     for (int i = 0; i < numRows; i++) {
-        FlushRow row;
+        //FlushRow row;
         for (int j = 0; j < rowLength; j++) {
             FlushPatch patch;
-            row[j] = patch;
+
+            if (agentIndex < 2) {
+                patch.setGrove(&agents[agentIndex]);  // Assuming FlushPatch has setGrove
+            }
+            //row[j] = patch;
+            //row.push_back(patch);
+            agentIndex++;
         }
-        lattice[i] = row;
+        //lattice[i] = row;
+        //lattice.push_back(row);
     }
 }
 
@@ -704,9 +605,9 @@ vector<coord> getGroveBounds(int identifier) {
 /*****************************************************************
 * rogueTreeAt
 ******************************************************************/
-bool rogueTreeAt(int i, int j) {
-    if (isValidCoordinate(coord(i,j))) {
-        lattice[i][j].kill();
+bool rogueTreeAt(int i, int j,Grove* agent) {
+    if (isValidCoordinateAtgrove(coord(i,j),agent)) {
+        agent->lattice[i][j].kill();
         return true;
     }
     return false;
@@ -715,7 +616,7 @@ bool rogueTreeAt(int i, int j) {
 /****************************************************************
 * Spray trees
 ******************************************************************/
-void sprayTrees(double efficacy, vector<coord> locations) {
+void sprayTrees(double efficacy, vector<coord> locations,Grove* f) {
     int psyllidsRemoved = 0;
     //cout << "Spraying on day: " << modelDay << " with efficacy " << efficacy << endl;
     for (int i = 0; i < numRows; i++) {
@@ -724,13 +625,13 @@ void sprayTrees(double efficacy, vector<coord> locations) {
             //int c = locations[i].get<1>();
         
             //int beforePsyllids = lattice[r][c].getTotalPsyllids();
-            lattice[i][j].numPsyllids_male = ceil((1.0 - efficacy) * (double)lattice[i][j].numPsyllids_male);
-            lattice[i][j].numPsyllids_female = ceil((1.0 - efficacy) * (double)lattice[i][j].numPsyllids_female);
-            lattice[i][j].numInfectedPsyllids_male = ceil((1.0 - efficacy) * (double)lattice[i][j].numInfectedPsyllids_male);
-            lattice[i][j].numInfectedPsyllids_female = ceil((1.0 - efficacy) * (double)lattice[i][j].numInfectedPsyllids_female);
+            f->lattice[i][j].numPsyllids_male = ceil((1.0 - efficacy) * (double)f->lattice[i][j].numPsyllids_male);
+            f->lattice[i][j].numPsyllids_female = ceil((1.0 - efficacy) * (double)f->lattice[i][j].numPsyllids_female);
+            f->lattice[i][j].numInfectedPsyllids_male = ceil((1.0 - efficacy) * (double)f->lattice[i][j].numInfectedPsyllids_male);
+            f->lattice[i][j].numInfectedPsyllids_female = ceil((1.0 - efficacy) * (double)f->lattice[i][j].numInfectedPsyllids_female);
             for (int k = 0; k < 17; k++) {
-                lattice[i][j].numNymphs[k] = ceil((1.0 - efficacy) * (double)lattice[i][j].numNymphs[k]);
-                lattice[i][j].numInfectedNymphs[k] = ceil((1.0 - efficacy) * (double)lattice[i][j].numInfectedNymphs[k]);
+                f->lattice[i][j].numNymphs[k] = ceil((1.0 - efficacy) * (double)f->lattice[i][j].numNymphs[k]);
+                f->lattice[i][j].numInfectedNymphs[k] = ceil((1.0 - efficacy) * (double)f->lattice[i][j].numInfectedNymphs[k]);
             }
         }
     }
@@ -821,9 +722,20 @@ void uniformPsyllidDistribution(double percent, int numPsyllids, vector<coord> o
     }
     for (int i = 0; i < cells.size(); i++) {
         for (int j = 0; j < psyllidsPerTree; j++) {
-            bool infected = doubleRand(0, 1) < initialInfectedPortion;
-            bool female = doubleRand(0, 1) < 0.5;
-            lattice[cells[i].get<0>()][cells[i].get<1>()].placePsyllid(female, true, infected);
+            if(globalfarmid ==0)
+            {
+                doubleRanduniformPsyllidinfect.clear();
+                doubleRanduniformPsyllidfemale.clear();
+
+                doubleRanduniformPsyllidinfect.resize(cells.size(), std::vector<double>(psyllidsPerTree, 0.0));
+                doubleRanduniformPsyllidfemale.resize(cells.size(), std::vector<double>(psyllidsPerTree, 0.0));
+
+                doubleRanduniformPsyllidinfect[i][j] = doubleRand(0, 1);
+                doubleRanduniformPsyllidfemale[i][j] = doubleRand(0, 1);
+            }
+            bool infected = doubleRanduniformPsyllidinfect[i][j] < initialInfectedPortion;
+            bool female = doubleRanduniformPsyllidfemale[i][j] < 0.5;
+            globalgrove->lattice[cells[i].get<0>()][cells[i].get<1>()].placePsyllid(female, true, infected);
         }
     }
 }
@@ -848,9 +760,20 @@ vector<coord> invasionModality1(int groveID) {
     //Place psyllids
     for (int i = 0; i < cells.size(); i++) {
         for (int j = 0; j < psyllidsPerTree; j++) {
-            bool infected = doubleRand(0,1) < initialInfectedPortion;
-            bool female = doubleRand(0,1) < 0.5;
-            lattice[cells[i].get<0>()][cells[i].get<1>()].placePsyllid(female, true, infected);
+            if(globalfarmid == 0)
+            {
+                doubleRandinvasionModality1infect.clear();
+                doubleRandinvasionModality1femal.clear();
+
+                doubleRandinvasionModality1infect.resize(cells.size(), std::vector<double>(psyllidsPerTree, 0.0));
+                doubleRandinvasionModality1femal.resize(cells.size(), std::vector<double>(psyllidsPerTree, 0.0));
+
+                doubleRandinvasionModality1infect[i][j] = doubleRand(0,1);
+                doubleRandinvasionModality1femal[i][j] = doubleRand(0,1);
+            }
+            bool infected = doubleRandinvasionModality1infect[i][j] < initialInfectedPortion;
+            bool female = doubleRandinvasionModality1femal[i][j] < 0.5;
+            globalgrove->lattice[cells[i].get<0>()][cells[i].get<1>()].placePsyllid(female, true, infected);
         }
     }
     //cout << "Psyllids placed: " << numPsyllids << endl;
@@ -904,9 +827,20 @@ vector<coord> invasionModality3(int groveID) {
     //Distribute psyllids
     for (int i = 0; i < cells.size(); i++) {
         for (int j = 0; j < psyllidsPerTree; j++) {
-            bool infected = doubleRand(0, 1) < initialInfectedPortion;
-            bool female = doubleRand(0, 1) < 0.5;
-            lattice[cells[i].get<0>()][cells[i].get<1>()].placePsyllid(female, true, infected);
+            if(globalfarmid == 0)
+            {
+                doubleRandinvasionModality3infect.clear();
+                doubleRandinvasionModality3femal.clear();
+
+                doubleRandinvasionModality3infect.resize(cells.size(), std::vector<double>(psyllidsPerTree, 0.0));
+                doubleRandinvasionModality3femal.resize(cells.size(), std::vector<double>(psyllidsPerTree, 0.0));
+
+                doubleRandinvasionModality3infect[i][j] = doubleRand(0, 1);
+                doubleRandinvasionModality3femal[i][j] = doubleRand(0, 1);
+            }
+            bool infected = doubleRandinvasionModality3infect[i][j] < initialInfectedPortion;
+            bool female = doubleRandinvasionModality3femal[i][j] < 0.5;
+            globalgrove->lattice[cells[i].get<0>()][cells[i].get<1>()].placePsyllid(female, true, infected);
         }
     }
     return cells;
@@ -944,9 +878,20 @@ vector<coord> invasionModality5(int groveID) {
     int psyllidsPerTree = 22;
     for (int i = 0; i < cells.size(); i++) {
         for (int j = 0; j < psyllidsPerTree; j++) {
-            bool infected = doubleRand(0, 1) < initialInfectedPortion;
-            bool female = doubleRand(0, 1) < 0.5;
-            lattice[cells[i].get<0>()][cells[i].get<1>()].placePsyllid(female, true, infected);
+            if(globalfarmid == 0)
+            {
+                doubleRandinvasionModality5infect.clear();
+                doubleRandinvasionModality5femal.clear();
+
+                doubleRandinvasionModality5infect.resize(cells.size(), std::vector<double>(psyllidsPerTree, 0.0));
+                doubleRandinvasionModality5femal.resize(cells.size(), std::vector<double>(psyllidsPerTree, 0.0));
+
+                doubleRandinvasionModality5infect[i][j] = doubleRand(0, 1);
+                doubleRandinvasionModality5femal[i][j] = doubleRand(0, 1);
+            }
+            bool infected =  doubleRandinvasionModality5infect[i][j]< initialInfectedPortion;
+            bool female = doubleRandinvasionModality5femal[i][j] < 0.5;
+            globalgrove->lattice[cells[i].get<0>()][cells[i].get<1>()].placePsyllid(female, true, infected);
         }
     }
 
@@ -1021,8 +966,8 @@ void placeInitialPsyllids(int invasionModality, int groveID) {
  * Initialize Model
  * Called from econ
  * **********************************************/
-void initializeModel() {
-    initializeLattice();
+void initializeModel(Grove* agent) {
+    initializeLattice(agent);
     return;
 }
 
@@ -1093,24 +1038,29 @@ void birthNewFlush() {
     for (int i = 0; i < numRows; i++) {
         for (int j = 0; j < rowLength; j++) {
             //Dont birth flush on dead trees
-            if (!lattice[i][j].alive) {
+            if (!globalgrove->lattice[i][j].alive) {
                 continue;
             }
-            double birthInfectChance = lattice[i][j].getHLBSeverity();
+            double birthInfectChance = globalgrove->lattice[i][j].getHLBSeverity();
             //assert(birthInfectChance < 1);
             if (birthInfectChance > 0) {
                 for (int k = 0; k < flushEmerging; k++) {
-                    if (doubleRand(0, 1) <= birthInfectChance) {
+                    if(globalfarmid == 0)
+                    {
+                        doubleRandbirthnewflush[i][j][k] = doubleRand(0, 1);
+                    }
+
+                    if (doubleRandbirthnewflush[i][j][k] <= birthInfectChance) {
                         
-                        lattice[i][j].numInfectedShoots[0]++;
+                        globalgrove->lattice[i][j].numInfectedShoots[0]++;
                     }
                     else {
-                        lattice[i][j].numShoots[0]++;
+                        globalgrove->lattice[i][j].numShoots[0]++;
                     }
                 }
             }
             else {
-                lattice[i][j].numShoots[0] += flushEmerging;
+                globalgrove->lattice[i][j].numShoots[0] += flushEmerging;
             }
         }
     }
@@ -1144,18 +1094,18 @@ void migration() {
         for (int j = 0; j < rowLength; j++) {
             //1. Calculate probabilities 
             double leftProb, rightProb, upProb, downProb, noneProb;
-            int total = lattice[i][j].getTotalPsyllids();
-
+            int total = globalgrove->lattice[i][j].getTotalPsyllids();
+            
             //1a. Determine left right probabilities
             double inRowProb = proportionMigrating * withinRowP;
-            if (isValidCoordinate(coord(i, j + 1)) && isValidCoordinate(coord(i, j - 1))) {
+            if (isValidCoordinateAtgrove(coord(i, j + 1),globalgrove) && isValidCoordinateAtgrove(coord(i, j - 1),globalgrove)) {
                 leftProb = rightProb = inRowProb * 0.5;
             }
-            else if (!isValidCoordinate(coord(i, j + 1)) && isValidCoordinate(coord(i, j - 1))) {
+            else if (!isValidCoordinateAtgrove(coord(i, j + 1),globalgrove) && isValidCoordinateAtgrove(coord(i, j - 1),globalgrove)) {
                 leftProb = inRowProb;
                 rightProb = 0;
             }
-            else if (isValidCoordinate(coord(i, j + 1)) && !isValidCoordinate(coord(i, j - 1))) {
+            else if (isValidCoordinateAtgrove(coord(i, j + 1),globalgrove) && !isValidCoordinateAtgrove(coord(i, j - 1),globalgrove)) {
                 rightProb = inRowProb;
                 leftProb = 0;
             }
@@ -1165,14 +1115,14 @@ void migration() {
             
             //1b. Determine up-down probabilities
             double betweenRowProb = proportionMigrating * betweenRowP;
-            if (isValidCoordinate(coord(i + 1, j)) && isValidCoordinate(coord(i - 1, j))) {
+            if (isValidCoordinateAtgrove(coord(i + 1, j),globalgrove) && isValidCoordinateAtgrove(coord(i - 1, j),globalgrove)) {
                 upProb = downProb = betweenRowProb * 0.5;
             }
-            else if (!isValidCoordinate(coord(i + 1, j)) && isValidCoordinate(coord(i - 1, j))) {
+            else if (!isValidCoordinateAtgrove(coord(i + 1, j),globalgrove) && isValidCoordinateAtgrove(coord(i - 1, j),globalgrove)) {
                 downProb = betweenRowProb;
                 upProb = 0;
             }
-            else if (isValidCoordinate(coord(i + 1, j)) && !isValidCoordinate(coord(i - 1, j))) {
+            else if (isValidCoordinateAtgrove(coord(i + 1, j),globalgrove) && !isValidCoordinateAtgrove(coord(i - 1, j),globalgrove)) {
                 upProb = betweenRowProb;
                 downProb = 0;
             }
@@ -1181,7 +1131,7 @@ void migration() {
             }
             
             //1c. Apply border crossing modifiers
-            if (upProb != 0 && crossesBorder(coord(i, j), coord(i + 1, j))) {
+           /*if (upProb != 0 && crossesBorder(coord(i, j), coord(i + 1, j))) {
                 upProb = upProb * borderCrossingP;
             }
             if (downProb != 0 && crossesBorder(coord(i, j), coord(i - 1, j))) {
@@ -1192,7 +1142,7 @@ void migration() {
             }
             if (rightProb != 0 && crossesBorder(coord(i, j), coord(i, j + 1))) {
                 rightProb = rightProb * borderCrossingP;
-            }
+            }*/
 
             //1d. calculate remainder
             noneProb = 1 - leftProb - rightProb - upProb - downProb;
@@ -1201,10 +1151,10 @@ void migration() {
             double mProbs[5] = { leftProb, rightProb, upProb, downProb, noneProb };
             
             //2a. Uninfected male
-            if (lattice[i][j].numPsyllids_male > 0) {
+            if (globalgrove->lattice[i][j].numPsyllids_male > 0) {
                 std::fill(multiPull, multiPull + 5, 0);
-                multinom(5, lattice[i][j].numPsyllids_male, mProbs, multiPull);
-                assert(accumulate(multiPull, multiPull + 5, 0) == lattice[i][j].numPsyllids_male);
+                multinom(5, globalgrove->lattice[i][j].numPsyllids_male, mProbs, multiPull);
+                assert(accumulate(multiPull, multiPull + 5, 0) == globalgrove->lattice[i][j].numPsyllids_male);
                 if (leftProb > 0) {
                     diffMales[numRows*(j-1) + i] += multiPull[0];
                 }
@@ -1221,14 +1171,14 @@ void migration() {
                     diffMales[numRows*j + i-1] += multiPull[3];
                 }
                 //lattice[i][j].numPsyllids_male -= (lattice_old[i][j].numPsyllids_male - multiPull[4]);
-                diffMales[numRows*j + i] -= (lattice[i][j].numPsyllids_male - multiPull[4]);
+                diffMales[numRows*j + i] -= (globalgrove->lattice[i][j].numPsyllids_male - multiPull[4]);
             }
 
             //2b. Uninfected female
-            if (lattice[i][j].numPsyllids_female > 0) {
+            if (globalgrove->lattice[i][j].numPsyllids_female > 0) {
                 std::fill(multiPull, multiPull + 5, 0);
-                multinom(5, lattice[i][j].numPsyllids_female, mProbs, multiPull);
-                assert(accumulate(multiPull, multiPull + 5, 0) == lattice[i][j].numPsyllids_female);
+                multinom(5, globalgrove->lattice[i][j].numPsyllids_female, mProbs, multiPull);
+                assert(accumulate(multiPull, multiPull + 5, 0) == globalgrove->lattice[i][j].numPsyllids_female);
                 if (leftProb > 0) {
                     //lattice[i][j - 1].numPsyllids_female += multiPull[0];
                     diffFemales[numRows*(j-1) + i] += multiPull[0];
@@ -1246,13 +1196,13 @@ void migration() {
                     diffFemales[numRows*j + i-1] += multiPull[3];
                 }
                 //lattice[i][j].numPsyllids_female -= (lattice_old[i][j].numPsyllids_female - multiPull[4]);
-                diffFemales[numRows*j + i] -= (lattice[i][j].numPsyllids_female - multiPull[4]);
+                diffFemales[numRows*j + i] -= (globalgrove->lattice[i][j].numPsyllids_female - multiPull[4]);
             }
             //2c. Infected male
-            if (lattice[i][j].numInfectedPsyllids_male > 0) {
+            if (globalgrove->lattice[i][j].numInfectedPsyllids_male > 0) {
                 std::fill(multiPull, multiPull + 5, 0);
-                multinom(5, lattice[i][j].numInfectedPsyllids_male, mProbs, multiPull);
-                assert(accumulate(multiPull, multiPull + 5, 0) == lattice[i][j].numInfectedPsyllids_male);
+                multinom(5, globalgrove->lattice[i][j].numInfectedPsyllids_male, mProbs, multiPull);
+                assert(accumulate(multiPull, multiPull + 5, 0) == globalgrove->lattice[i][j].numInfectedPsyllids_male);
                 if (leftProb > 0) {
                     //lattice[i][j - 1].numInfectedPsyllids_male += multiPull[0];
                     diffMales_i[numRows*(j-1) + i] += multiPull[0];
@@ -1270,14 +1220,14 @@ void migration() {
                     diffMales_i[numRows*j + i-1] += multiPull[3];
                 }
                 //lattice[i][j].numInfectedPsyllids_male -= (lattice_old[i][j].numInfectedPsyllids_male - multiPull[4]);
-                diffMales_i[numRows*j + i] -= (lattice[i][j].numInfectedPsyllids_male - multiPull[4]);
+                diffMales_i[numRows*j + i] -= (globalgrove->lattice[i][j].numInfectedPsyllids_male - multiPull[4]);
             }
 
             //2d. Infected female
-            if (lattice[i][j].numInfectedPsyllids_female > 0) {
+            if (globalgrove->lattice[i][j].numInfectedPsyllids_female > 0) {
                 std::fill(multiPull, multiPull + 5, 0);
-                multinom(5, lattice[i][j].numInfectedPsyllids_female, mProbs, multiPull);
-                assert(accumulate(multiPull, multiPull + 5, 0) == lattice[i][j].numInfectedPsyllids_female);
+                multinom(5, globalgrove->lattice[i][j].numInfectedPsyllids_female, mProbs, multiPull);
+                assert(accumulate(multiPull, multiPull + 5, 0) == globalgrove->lattice[i][j].numInfectedPsyllids_female);
                 if (leftProb > 0) {
                     //lattice[i][j - 1].numInfectedPsyllids_female += multiPull[0];
                     diffFemales_i[numRows*(j-1) + i] += multiPull[0];
@@ -1295,17 +1245,17 @@ void migration() {
                     diffFemales_i[numRows*j + i-1] += multiPull[3];
                 }
                 //lattice[i][j].numInfectedPsyllids_female -= (lattice_old[i][j].numInfectedPsyllids_female - multiPull[4]);
-                diffFemales_i[numRows*j + i] -= (lattice[i][j].numInfectedPsyllids_female - multiPull[4]);
+                diffFemales_i[numRows*j + i] -= (globalgrove->lattice[i][j].numInfectedPsyllids_female - multiPull[4]);
             }
         }
     }
 
     for (int i = 0; i < numRows; i++) {
         for (int j = 0; j < rowLength; j++) {
-            lattice[i][j].numPsyllids_male += diffMales[numRows*j + i];
-            lattice[i][j].numPsyllids_female += diffFemales[numRows*j + i];
-            lattice[i][j].numInfectedPsyllids_male += diffMales_i[numRows*j + i];
-            lattice[i][j].numInfectedPsyllids_female += diffFemales_i[numRows*j + i];
+            globalgrove->lattice[i][j].numPsyllids_male += diffMales[numRows*j + i];
+            globalgrove->lattice[i][j].numPsyllids_female += diffFemales[numRows*j + i];
+            globalgrove->lattice[i][j].numInfectedPsyllids_male += diffMales_i[numRows*j + i];
+            globalgrove->lattice[i][j].numInfectedPsyllids_female += diffFemales_i[numRows*j + i];
         }
     }
     delete diffMales;
@@ -1328,40 +1278,40 @@ void psyllidAging() {
         for (int j = 0; j < rowLength; j++) {
             //Calculate modifier
             double modifier = 1;
-            if (lattice[i][j].getTotalPsyllids() > carryingCapacity) {
-                modifier = carryingCapacity / (double)lattice[i][j].getTotalPsyllids();
+            if (globalgrove->lattice[i][j].getTotalPsyllids() > carryingCapacity) {
+                modifier = carryingCapacity / (double)globalgrove->lattice[i][j].getTotalPsyllids();
             }
             double nymphSurvivalChance = eggSurvivalP * modifier;
             double adultSurvivalChance = adultSurvivalP * modifier;
-            int totalPsyllids = lattice[i][j].getTotalPsyllids();
+            int totalPsyllids = globalgrove->lattice[i][j].getTotalPsyllids();
 
             
             //Age adults
             
             //UI Male
-            int ui_male = lattice[i][j].numPsyllids_male;
+            int ui_male = globalgrove->lattice[i][j].numPsyllids_male;
             if (ui_male > 0) {
                 boost::random::binomial_distribution<int> pAdult(ui_male, adultSurvivalChance);
-                lattice[i][j].numPsyllids_male = pAdult(rng);
+                globalgrove->lattice[i][j].numPsyllids_male = pAdult(rng);
             }
             //I Male
-            int i_male = lattice[i][j].numInfectedPsyllids_male;
+            int i_male = globalgrove->lattice[i][j].numInfectedPsyllids_male;
             if (i_male > 0) {
                 boost::random::binomial_distribution<int> pAdult(i_male, adultSurvivalChance);
-                lattice[i][j].numInfectedPsyllids_male = pAdult(rng);
+                globalgrove->lattice[i][j].numInfectedPsyllids_male = pAdult(rng);
             }
             
             //UI Female
-            int ui_female = lattice[i][j].numPsyllids_female;
+            int ui_female = globalgrove->lattice[i][j].numPsyllids_female;
             if (ui_female > 0) {
                 boost::random::binomial_distribution<int> pAdult(ui_female, adultSurvivalChance);
-                lattice[i][j].numPsyllids_female = pAdult(rng);
+                globalgrove->lattice[i][j].numPsyllids_female = pAdult(rng);
             }
             //I Female
-            int i_female = lattice[i][j].numInfectedPsyllids_female;
+            int i_female = globalgrove->lattice[i][j].numInfectedPsyllids_female;
             if (i_female > 0) {
                 boost::random::binomial_distribution<int> pAdult(i_female, adultSurvivalChance);
-                lattice[i][j].numInfectedPsyllids_female = pAdult(rng);
+                globalgrove->lattice[i][j].numInfectedPsyllids_female = pAdult(rng);
             }
             //Age nymphs
             for (int k = 16; k >= 0; k--) {
@@ -1369,48 +1319,48 @@ void psyllidAging() {
                 if (k == 16) {
                     // UNINFECTED
                     //How many age up
-                    int startingNymphs_ui = lattice[i][j].numNymphs[k];
+                    int startingNymphs_ui = globalgrove->lattice[i][j].numNymphs[k];
                     if (startingNymphs_ui > 0) {
                         boost::random::binomial_distribution<int> pAge_ui(startingNymphs_ui, nymphSurvivalChance);
                         int numNymphsAging_ui = pAge_ui(rng);
                         //How many are female
                         boost::random::binomial_distribution<int> pSex_ui(numNymphsAging_ui, 0.5);
                         int numFemaleNymphs_ui = pSex_ui(rng);
-                        lattice[i][j].numPsyllids_female += numFemaleNymphs_ui;
-                        lattice[i][j].numPsyllids_male += numNymphsAging_ui - numFemaleNymphs_ui;
+                        globalgrove->lattice[i][j].numPsyllids_female += numFemaleNymphs_ui;
+                        globalgrove->lattice[i][j].numPsyllids_male += numNymphsAging_ui - numFemaleNymphs_ui;
                     }
                     // INFECTED
                     //How many age up
-                    int startingNymphs_i = lattice[i][j].numInfectedNymphs[k];
+                    int startingNymphs_i = globalgrove->lattice[i][j].numInfectedNymphs[k];
                     if (startingNymphs_i > 0) {
                         boost::random::binomial_distribution<int> pAge_i(startingNymphs_i, nymphSurvivalChance);
                         int numNymphsAging_i = pAge_i(rng);
                         //How many are female
                         boost::random::binomial_distribution<int> pSex_i(numNymphsAging_i, 0.5);
                         int numFemaleNymphs_i = pSex_i(rng);
-                        lattice[i][j].numInfectedPsyllids_female += numFemaleNymphs_i;
-                        lattice[i][j].numInfectedPsyllids_male += numNymphsAging_i - numFemaleNymphs_i;
+                        globalgrove->lattice[i][j].numInfectedPsyllids_female += numFemaleNymphs_i;
+                        globalgrove->lattice[i][j].numInfectedPsyllids_male += numNymphsAging_i - numFemaleNymphs_i;
                     }
                 }
 
 
 
                 if (k == 0) {
-                    lattice[i][j].numNymphs[k] = 0;
-                    lattice[i][j].numInfectedNymphs[k] = 0;
+                    globalgrove->lattice[i][j].numNymphs[k] = 0;
+                    globalgrove->lattice[i][j].numInfectedNymphs[k] = 0;
                 }
                 else {
                     //UNINFECTED
-                    lattice[i][j].numNymphs[k] = 0;
-                    if (lattice[i][j].numNymphs[k - 1] > 0) {
-                        boost::random::binomial_distribution<int> pAge_ui(lattice[i][j].numNymphs[k - 1], nymphSurvivalChance);
-                        lattice[i][j].numNymphs[k] = pAge_ui(rng);
+                    globalgrove->lattice[i][j].numNymphs[k] = 0;
+                    if (globalgrove->lattice[i][j].numNymphs[k - 1] > 0) {
+                        boost::random::binomial_distribution<int> pAge_ui(globalgrove->lattice[i][j].numNymphs[k - 1], nymphSurvivalChance);
+                        globalgrove->lattice[i][j].numNymphs[k] = pAge_ui(rng);
                     }
                     //INFECTED
-                    lattice[i][j].numInfectedNymphs[k] = 0;
-                    if (lattice[i][j].numInfectedNymphs[k - 1] > 0) {
-                        boost::random::binomial_distribution<int> pAge_i(lattice[i][j].numInfectedNymphs[k - 1], nymphSurvivalChance);
-                        lattice[i][j].numInfectedNymphs[k] = pAge_i(rng);
+                    globalgrove->lattice[i][j].numInfectedNymphs[k] = 0;
+                    if (globalgrove->lattice[i][j].numInfectedNymphs[k - 1] > 0) {
+                        boost::random::binomial_distribution<int> pAge_i(globalgrove->lattice[i][j].numInfectedNymphs[k - 1], nymphSurvivalChance);
+                        globalgrove->lattice[i][j].numInfectedNymphs[k] = pAge_i(rng);
                     }
                 }
             }
@@ -1428,11 +1378,11 @@ void psyllidAging() {
 void eggManagement() {
     for (int i = 0; i < numRows; i++) {
         for (int j = 0; j < rowLength; j++) {
-            int numMothers = lattice[i][j].numPsyllids_female + lattice[i][j].numInfectedPsyllids_female;
-            int numViableShoots = accumulate(lattice[i][j].numShoots.begin(), lattice[i][j].numShoots.end(), 0);
-            numViableShoots += accumulate(lattice[i][j].numInfectedShoots.begin(), lattice[i][j].numInfectedShoots.end(), 0);
+            int numMothers = globalgrove->lattice[i][j].numPsyllids_female + globalgrove->lattice[i][j].numInfectedPsyllids_female;
+            int numViableShoots = accumulate(globalgrove->lattice[i][j].numShoots.begin(), globalgrove->lattice[i][j].numShoots.end(), 0);
+            numViableShoots += accumulate(globalgrove->lattice[i][j].numInfectedShoots.begin(), globalgrove->lattice[i][j].numInfectedShoots.end(), 0);
             int totalNymphs = min(numMothers * eggsPerFemaleAdult, numViableShoots * shootEggCapacity);
-            lattice[i][j].numNymphs[0] += totalNymphs;
+            globalgrove->lattice[i][j].numNymphs[0] += totalNymphs;
         }
     }
 }
@@ -1447,19 +1397,19 @@ void diseaseTransmission() {
     for (int i = 0; i < numRows; i++) {
         for (int j = 0; j < rowLength; j++) {
             //1. Transmit from flush to psyllids
-            int numUninfectedShoots = accumulate(lattice[i][j].numShoots.begin(), lattice[i][j].numShoots.end(), 0);
-            int numInfectedShoots = accumulate(lattice[i][j].numInfectedShoots.begin(), lattice[i][j].numInfectedShoots.end(), 0);
-            if (lattice[i][j].infectious) {
+            int numUninfectedShoots = accumulate(globalgrove->lattice[i][j].numShoots.begin(), globalgrove->lattice[i][j].numShoots.end(), 0);
+            int numInfectedShoots = accumulate(globalgrove->lattice[i][j].numInfectedShoots.begin(), globalgrove->lattice[i][j].numInfectedShoots.end(), 0);
+            if (globalgrove->lattice[i][j].infectious) {
                 double infectedproportion = 0;
                 if (numUninfectedShoots > 0) {
                     infectedproportion = (double)numInfectedShoots / ((double)numInfectedShoots + (double)numUninfectedShoots);
                 }
                 for (int k = nymphMinAgeToBeInfected; k < 17; k++) {
-                    int ui_nymphs = lattice[i][j].numNymphs[k];
+                    int ui_nymphs = globalgrove->lattice[i][j].numNymphs[k];
                     ui_nymphs = floor(ui_nymphs * infectedproportion);
                     int nymphsInfected = floor(ui_nymphs * transmissionFlushNymph);
-                    lattice[i][j].numNymphs[k] -= nymphsInfected;
-                    lattice[i][j].numInfectedNymphs[k] += nymphsInfected;
+                    globalgrove->lattice[i][j].numNymphs[k] -= nymphsInfected;
+                    globalgrove->lattice[i][j].numInfectedNymphs[k] += nymphsInfected;
                 }
             }
 
@@ -1469,16 +1419,16 @@ void diseaseTransmission() {
                 double probabilities[18] = {};
                 double finalProb = 1;
                 for (int k = 0; k < 17; k++) {
-                    probabilities[k] = (double)lattice[i][j].numShoots[k] / (double)totalShoots * (double)transmissionAdultFlush;
+                    probabilities[k] = (double)globalgrove->lattice[i][j].numShoots[k] / (double)totalShoots * (double)transmissionAdultFlush;
                     finalProb -= probabilities[k];
                 }
                 probabilities[17] = finalProb;
                 int deltaInfected[18] = {};
-                int totalInfectedPsyllids = lattice[i][j].numInfectedPsyllids_female + lattice[i][j].numInfectedPsyllids_male;
+                int totalInfectedPsyllids = globalgrove->lattice[i][j].numInfectedPsyllids_female + globalgrove->lattice[i][j].numInfectedPsyllids_male;
                 multinom(18, totalInfectedPsyllids, probabilities, deltaInfected);
                 for (int k = 0; k < 17; k++) {
-                    lattice[i][j].numShoots[k] -= min(deltaInfected[k], lattice[i][j].numShoots[k]);
-                    lattice[i][j].numInfectedShoots[k] += min(deltaInfected[k], lattice[i][j].numShoots[k]);
+                    globalgrove->lattice[i][j].numShoots[k] -= min(deltaInfected[k], globalgrove->lattice[i][j].numShoots[k]);
+                    globalgrove->lattice[i][j].numInfectedShoots[k] += min(deltaInfected[k], globalgrove->lattice[i][j].numShoots[k]);
                 }
             }
         }
@@ -1497,31 +1447,31 @@ void ageFlush() {
             for (int k = 29; k >= 0; k--) {
                 //Oldest shoots graduate to old shoots
                 if (k == 29) {
-                    lattice[i][j].oldUninfectedShoots += lattice[i][j].numShoots[k];
-                    lattice[i][j].oldInfectedShoots += lattice[i][j].numInfectedShoots[k];
+                    globalgrove->lattice[i][j].oldUninfectedShoots += globalgrove->lattice[i][j].numShoots[k];
+                    globalgrove->lattice[i][j].oldInfectedShoots += globalgrove->lattice[i][j].numInfectedShoots[k];
                 }
 
                 // All ages shift forward 1
                 if (k == 0) {
-                    lattice[i][j].numShoots[k] = 0;
-                    lattice[i][j].numInfectedShoots[k] = 0;
+                    globalgrove->lattice[i][j].numShoots[k] = 0;
+                    globalgrove->lattice[i][j].numInfectedShoots[k] = 0;
                 }
                 else {
-                    lattice[i][j].numShoots[k] = lattice[i][j].numShoots[k - 1];
-                    lattice[i][j].numInfectedShoots[k] = lattice[i][j].numInfectedShoots[k - 1];
+                    globalgrove->lattice[i][j].numShoots[k] = globalgrove->lattice[i][j].numShoots[k - 1];
+                    globalgrove->lattice[i][j].numInfectedShoots[k] = globalgrove->lattice[i][j].numInfectedShoots[k - 1];
                 }
             }
 
             //Infection management
             
-            if (lattice[i][j].getHLBSeverity() > 0) {
-                if (lattice[i][j].daysInfected <= asymptomaticLength) {
-                    lattice[i][j].daysInfected++;
-                    if (lattice[i][j].daysInfected == latentPeriod) {
-                        lattice[i][j].infectious = true;
+            if (globalgrove->lattice[i][j].getHLBSeverity() > 0) {
+                if (globalgrove->lattice[i][j].daysInfected <= asymptomaticLength) {
+                    globalgrove->lattice[i][j].daysInfected++;
+                    if (globalgrove->lattice[i][j].daysInfected == latentPeriod) {
+                        globalgrove->lattice[i][j].infectious = true;
                     }
-                    if (lattice[i][j].daysInfected == asymptomaticLength) {
-                        lattice[i][j].symptomatic = true;
+                    if (globalgrove->lattice[i][j].daysInfected == asymptomaticLength) {
+                        globalgrove->lattice[i][j].symptomatic = true;
                     }
                 }
             }
@@ -1537,39 +1487,53 @@ void ageFlush() {
  * The wrapper function for all activities,
  * called by the econ layer
  * ****************************************/
-void initalize()
+/*void initalize(Grove* agent)
 {
-    initializeModel();
+    initializeModel(agent);
     if (outputFlag) {
         initializeCSV();
     }
     modelDay = 0;
-}
+}*/
 
-void advanceBiologicalModel(int farmid) {
+
+
+
+void advanceBiologicalModel(int farmid,Grove* agent) {
     //First time function is called
+    globalfarmid = farmid;
+    globalgrove = agent;
+
+    
     if(farmid ==0)
         modelDay++;
-    if(modelDay <= 10)
-        cout<< "modelDay : " << modelDay << " farmid : "<< farmid << endl;
+
     //Invasion day activities
-    if (!invasionDays_q.empty() && modelDay == invasionDays_q.front()) {
-        placeInitialPsyllids(invasionModalities_q.front(), invasionGrove);
-        invasionDays_q.pop();
-        invasionModalities_q.pop();
+    if (!invasionDays_q.empty() ) {
+        if(modelDay == invasionDays_q.front()){
+            placeInitialPsyllids(invasionModalities_q.front(), invasionGrove);
+        }
+        if((modelDay-1)== invasionDays_q.front())
+        {
+            invasionDays_q.pop();
+            invasionModalities_q.pop();
+        }
     }
+    
 
     //Keep track of flushing periods
     setFlushingPeriod(modelDay);
-
+    
     //Main activities
     if (isFlushingPeriod) {
        birthNewFlush();
     }
+    
 
     migration();
+    
     eggManagement();
-
+   
     diseaseTransmission();
 
     ageFlush();
@@ -1579,6 +1543,7 @@ void advanceBiologicalModel(int farmid) {
     if (outputFlag) {
         write_csv_batch();
     }
+
 
 }
 

@@ -31,7 +31,7 @@
   "summerFlushEnd": 195,
   "fallFlushStart": 250,
   "fallFlushEnd": 280,
-  "invasionModalities": "5,5",
+  "invasionModalities": "4,4",
   "invasionGrove": 0,
   "outputFlag": false
   }

@@ -3,18 +3,23 @@
 #include "grove.hpp"
 #include "math.h"
 #include "planningFunc.hpp"
-#include "../headers/behavior.hpp"
+#include "behavior.hpp"
 #include "bioABM.h"
 #include<vector>
 
 using namespace std;
+class Behavior;
 
 class BiologicalModel {
 public:
-     void biologicalmodel(int farmid); 
-     double biohlbseverity(int i,int j);
-     bool bioisTreeAlive(int i,int j);
-     void initalize();
+     std::vector<Behavior*> behaviorPatterns;
+     Grove* grove;
+     BiologicalModel() : grove(nullptr) {}
+
+     void biologicalmodel(int farmid,Grove* g); 
+     double biohlbseverity(int i,int j,Grove* g);
+     bool bioisTreeAlive(int i,int j,Grove* g);
+    //void initialize(Grove* g);
 };
 
 #endif

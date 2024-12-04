@@ -14,14 +14,14 @@ double getInfectedYield(double hlbSeverity) {
 /***************************************************************
 * Spray Grove
 ***************************************************************/
-void sprayGrove(int* ibounds, int* jbounds, double efficacy) {
+void sprayGrove(int* ibounds, int* jbounds, double efficacy,Grove *g) {
     vector<boost::tuple<int, int>> coords;
     for (int i = ibounds[0]; i < ibounds[1]; i++) {
         for (int j = jbounds[0]; j < jbounds[1]; j++) {
             coords.push_back(boost::tuple<int, int>(i, j));
         }
     }
-    bioABM::sprayTrees(efficacy, coords);
+    bioABM::sprayTrees(efficacy, coords,g);
 }
 
 /****************************************************************
@@ -30,7 +30,7 @@ void sprayGrove(int* ibounds, int* jbounds, double efficacy) {
  * (w/o replacement) symptomatic trees. Returns number of trees
  * removed
  * **************************************************************/
-int checkAndRogue(int* ibounds, int* jbounds, int width, int height,double thresholdseverity) {
+int checkAndRogue(int* ibounds, int* jbounds, int width, int height,double thresholdseverity,Grove *g) {
     int removalCount = 0;
     boost::uniform_int<> gen(0,1);
     boost::random::mt19937 econ_rng(std::time(0));
@@ -39,15 +39,15 @@ int checkAndRogue(int* ibounds, int* jbounds, int width, int height,double thres
         for (int j = jbounds[0]; j < jbounds[1]; j++) {
              // if(bioABM::isSymptomatic(i,j))
               
-            if (bioABM::isSymptomatic(i,j) && thresholdseverity <= bioABM::getSeverityAt(i,j)) {
+            if (bioABM::isSymptomatic(i,j,g) && thresholdseverity <= bioABM::getSeverityAtgrove(i,j,g)) {
                //cout<< bioABM::getModelDay() << "--" << bioABM::getSeverityAt(i,j) << endl;
                 //Rogue within a certain radius
                // cout<< "condition1" << endl;
                 for (int k = -height; k <= height; k++) {
                     for (int l = -width; l <= width; l++) {
-                        if (bioABM::isTreeAlive(i+k,j+l)) {
+                        if (bioABM::isTreeAliveAtgrove(i+k,j+l,g)) {
                            // cout<< "condition2" << endl;
-                            if(bioABM::rogueTreeAt(i+k,j+l))
+                            if(bioABM::rogueTreeAt(i+k,j+l,g))
                                 removalCount++;
                         }
                     }
@@ -86,14 +86,15 @@ void DensePlanting::executeAction(Grove *g) {
 }
 void RogueTrees::executeAction(Grove *g) {
     //cout<<"roguetree"<<endl;
-    int numRemoved = checkAndRogue(g->getIBounds(), g->getJBounds(), this->radius, this->radius,this->thresholdseverity);
+    //cout<< "Rogue" <<g->farmid<< endl;
+    int numRemoved = checkAndRogue(g->getIBounds(), g->getJBounds(), this->radius, this->radius,this->thresholdseverity,g);
     //cout<<numRemoved<<endl;
     this->rougetreeremoved += numRemoved;
     g->costs += this->surveyCost;
     g->costs += numRemoved * this->removalCost;
 }
 void RectangularRogue::executeAction(Grove *g) {
-    int numRemoved = checkAndRogue(g->getIBounds(), g->getJBounds(), this->width, this->height,this->thresholdseverity);
+    int numRemoved = checkAndRogue(g->getIBounds(), g->getJBounds(), this->width, this->height,this->thresholdseverity,g);
     g->costs += this->surveyCost;
     g->costs += numRemoved * this->removalCost;
 }
@@ -131,9 +132,9 @@ void RectangularRogue::PlanActions() {
 }
 
 void SprayTrees::executeAction(Grove *g) {
-
+    //cout<< "Spray" << g->farmid<< endl;
     //cout<<"SprayTrees"<<endl;
-    sprayGrove(g->getIBounds(), g->getJBounds(), this->efficacy);
+    sprayGrove(g->getIBounds(), g->getJBounds(), this->efficacy,g);
     g->costs += this->sprayCost;
 }
 /*******************************************************
