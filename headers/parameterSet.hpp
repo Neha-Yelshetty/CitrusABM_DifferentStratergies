@@ -14,8 +14,8 @@ namespace ParameterSet {
     int numIndividualSprays = 3; //Number of sprays for individual behavior pattern
     int numGroupSprays = 6; //Number of sprays for group behavior pattern
     int projectionLength = 1825; //Number of days growers plan into future when choosing a behavior, longer than model duration
-    const int gridLength = 2; //Number of rows in grove grid
-    const int gridWidth = 2; //Length of rows in grove grid
+    const int gridLength = 25; //Number of rows in grove grid
+    const int gridWidth = 1; //Length of rows in grove grid
     const int numBehaviorPatterns = 3; //Number of possible behavior patterns, used to index list
     double sprayCost = 3; // cost per spray
     int groupWindow = 21;
