@@ -100,7 +100,7 @@ void setExperimentID(int id) {
 
 bool isFlushingPeriod = false;
 bool modelStarted = false;
-int modelDay = -1;
+int modelDay = 0;
 ofstream csvFile;
 string csvName;
 
